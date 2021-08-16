@@ -1,0 +1,79 @@
+plugins {
+    id 'java'
+    id 'application'
+    id "com.google.protobuf" version "0.8.17"
+}
+
+group 'org.example'
+version '1.0-SNAPSHOT'
+
+final String XDS_VERSION = "0.1.28"
+final String GRPC_VERSION = "1.39.0"
+final String PROTOBUF_VERSION = "3.17.3"
+
+repositories {
+    mavenCentral()
+}
+
+application {
+    mainClass = "org.example.xds.routing.XdsServer"
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs 'build/generated/source/proto/main/grpc'
+            srcDirs 'build/generated/source/proto/main/java'
+        }
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${PROTOBUF_VERSION}"
+    }
+    plugins {
+        grpc {
+            artifact = "io.grpc:protoc-gen-grpc-java:${GRPC_VERSION}"
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+dependencies {
+    implementation "io.envoyproxy.controlplane:cache:${XDS_VERSION}"
+    implementation "io.envoyproxy.controlplane:api:${XDS_VERSION}"
+    implementation "io.envoyproxy.controlplane:server:${XDS_VERSION}"
+
+    implementation "com.google.protobuf:protoc:${PROTOBUF_VERSION}"
+
+    compileOnly "io.grpc:grpc-all:${GRPC_VERSION}"
+
+    implementation "com.google.protobuf:protobuf-java:${PROTOBUF_VERSION}"
+    implementation "com.google.protobuf:protobuf-java-util:${PROTOBUF_VERSION}"
+    implementation "io.grpc:grpc-protobuf:${GRPC_VERSION}"
+    implementation "io.grpc:protoc-gen-grpc-java:${GRPC_VERSION}"
+
+    implementation "io.grpc:grpc-netty:${GRPC_VERSION}"
+    implementation "io.grpc:grpc-services:${GRPC_VERSION}"
+    implementation "io.grpc:grpc-xds:${GRPC_VERSION}"
+
+    implementation "org.slf4j:slf4j-api:1.7.32"
+    implementation "org.slf4j:slf4j-simple:1.7.32"
+
+    annotationProcessor "org.projectlombok:lombok:1.18.20"
+    compileOnly "org.projectlombok:lombok:1.18.20"
+    testCompileOnly 'org.projectlombok:lombok:1.18.20'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.20'
+
+    testImplementation "org.junit.jupiter:junit-jupiter-api:5.7.2"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.7.2"
+}
+
+test {
+    useJUnitPlatform()
+}
