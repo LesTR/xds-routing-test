@@ -86,3 +86,49 @@ new NodeGroup<>() {
 [grpc-default-executor-0] INFO org.example.xds.routing.XdsServer - Routing [] to normal group.
 ```
 Looks like C++ implementation sends client cluster identification just in first request.
+
+## How to test
+* build server via `./gradlew build`
+* run server via `./gradlew run`
+* call endpoint from grpc-cli
+  * setup client config (see client configuration bellow)
+  * `GRPC_XDS_BOOTSTRAP=<PATH TO CLIENT CONFIG>`
+  * `grpc_cli call xds:///my-test-domain org.example.HelloService.Hello "from: 'cli'"`
+
+## Client configuration
+### For normal cluster (WORKS)
+```json
+{
+  "xds_servers": [
+    {
+      "server_uri": "localhost:8000",
+      "channel_creds": [
+        {
+          "type": "insecure"
+        }
+      ]
+    }
+  ],
+  "node": {
+    "cluster": "normal"
+  }
+}
+```
+### Priority cluster (FAIL)
+```json
+{
+  "xds_servers": [
+    {
+      "server_uri": "localhost:8000",
+      "channel_creds": [
+        {
+          "type": "insecure"
+        }
+      ]
+    }
+  ],
+  "node": {
+    "cluster": "priority"
+  }
+}
+```
