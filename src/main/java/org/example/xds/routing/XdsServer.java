@@ -1,5 +1,6 @@
 package org.example.xds.routing;
 
+import com.google.common.base.Preconditions;
 import com.google.protobuf.Any;
 import com.google.protobuf.UInt32Value;
 import io.envoyproxy.controlplane.cache.NodeGroup;
@@ -30,12 +31,22 @@ import io.envoyproxy.envoy.config.route.v3.RouteMatch;
 import io.envoyproxy.envoy.config.route.v3.VirtualHost;
 import io.envoyproxy.envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager;
 import io.envoyproxy.envoy.extensions.filters.network.http_connection_manager.v3.Rds;
+import io.grpc.Context;
+import io.grpc.Contexts;
+import io.grpc.ForwardingServerCallListener;
+import io.grpc.Grpc;
+import io.grpc.Metadata;
 import io.grpc.Server;
+import io.grpc.ServerCall;
+import io.grpc.ServerCallHandler;
+import io.grpc.ServerInterceptor;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -45,6 +56,9 @@ public class XdsServer {
   public static final String NORMAL_GROUP = "normal";
   public static final int XDS_PORT = 8000;
   public static final String LOCALHOST = "127.0.0.1";
+
+  private static final Context.Key<String> GRPC_CLIENT_SOCKET_KEY = Context.key("client_socket");
+  private static final Map<String, String> CLIENTS_CLUSTER_CACHE = new ConcurrentHashMap<>();
 
   private static final int PRIORITY_SERVER_PORT = 12000;
   private static final int NORMAL_SERVER_PORT = 14000;
@@ -69,12 +83,24 @@ public class XdsServer {
                 return hashByNodeCluster(node.getCluster());
               }
 
-              private String hashByNodeCluster(String cluster) {
-                if (cluster.equalsIgnoreCase(PRIORITY_GROUP)) {
-                  log.info("Routing [{}] to {} group.", cluster, PRIORITY_GROUP);
+              private String hashByNodeCluster(final String cluster) {
+                final String currentClient = GRPC_CLIENT_SOCKET_KEY.get();
+                String currentCLuster = cluster;
+                if (!cluster.isEmpty()) {
+                  CLIENTS_CLUSTER_CACHE.computeIfAbsent(currentClient, name -> cluster);
+                }
+                if (CLIENTS_CLUSTER_CACHE.containsKey(currentClient) && cluster.isEmpty()) {
+                  currentCLuster = CLIENTS_CLUSTER_CACHE.get(currentClient);
+                  log.info(
+                      "Cluster [{}] information restored from cache for client {}.",
+                      currentCLuster,
+                      currentClient);
+                }
+                if (currentCLuster.equalsIgnoreCase(PRIORITY_GROUP)) {
+                  log.info("Routing [{}] to {} group.", currentCLuster, PRIORITY_GROUP);
                   return PRIORITY_GROUP;
                 }
-                log.info("Routing [{}] to {} group.", cluster, NORMAL_GROUP);
+                log.info("Routing [{}] to {} group.", currentCLuster, NORMAL_GROUP);
                 return NORMAL_GROUP;
               }
             });
@@ -108,6 +134,39 @@ public class XdsServer {
 
     Server server =
         NettyServerBuilder.forPort(XDS_PORT)
+            .intercept(
+                new ServerInterceptor() {
+                  @Override
+                  public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+                      ServerCall<ReqT, RespT> call,
+                      Metadata headers,
+                      ServerCallHandler<ReqT, RespT> next) {
+                    java.net.SocketAddress remoteAddress =
+                        call.getAttributes().get(Grpc.TRANSPORT_ATTR_REMOTE_ADDR);
+                    Preconditions.checkNotNull(
+                        remoteAddress, "Unable to obtain client remote address.");
+                    final Context currentContext =
+                        Context.current()
+                            .withValue(GRPC_CLIENT_SOCKET_KEY, remoteAddress.toString());
+                    final ServerCall.Listener<ReqT> listener =
+                        Contexts.interceptCall(currentContext, call, headers, next);
+                    return new ForwardingServerCallListener.SimpleForwardingServerCallListener<>(
+                        listener) {
+
+                      @Override
+                      public void onCancel() {
+                        log.info("onCancel");
+                        clearCachedCluster();
+                        super.onCancel();
+                      }
+
+                      private void clearCachedCluster() {
+                        log.info("Clearing cluster cache for client {}.", remoteAddress);
+                        CLIENTS_CLUSTER_CACHE.remove(remoteAddress.toString());
+                      }
+                    };
+                  }
+                })
             .addService(discoveryServerV2.getAggregatedDiscoveryServiceImpl())
             .addService(discoveryServerV3.getAggregatedDiscoveryServiceImpl())
             .addService(discoveryServerV2.getClusterDiscoveryServiceImpl())
