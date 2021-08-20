@@ -1,5 +1,9 @@
 ## Simple test for grpc routing via XDS
 
+
+**UPDATE:**
+Resolved via server interceptor which cached cluster information. See `ebb1a00c39b9ab9db7868f1857ca5166d8e3748e` commit for details.
+
 This is a simple XDS server for reproducing routing problem from C++ client library.
 
 ### Desired behaviour
