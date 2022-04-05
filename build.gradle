@@ -7,8 +7,8 @@ plugins {
 group 'org.example'
 version '1.0-SNAPSHOT'
 
-final String XDS_VERSION = "0.1.28"
-final String GRPC_VERSION = "1.39.0"
+final String XDS_VERSION = "0.1.30"
+final String GRPC_VERSION = "1.45.0"
 final String PROTOBUF_VERSION = "3.17.3"
 
 repositories {
@@ -62,16 +62,17 @@ dependencies {
     implementation "io.grpc:grpc-services:${GRPC_VERSION}"
     implementation "io.grpc:grpc-xds:${GRPC_VERSION}"
 
-    implementation "org.slf4j:slf4j-api:1.7.32"
-    implementation "org.slf4j:slf4j-simple:1.7.32"
+    implementation "org.slf4j:slf4j-api:1.7.36"
+    implementation "org.slf4j:slf4j-simple:1.7.36"
 
-    annotationProcessor "org.projectlombok:lombok:1.18.20"
-    compileOnly "org.projectlombok:lombok:1.18.20"
-    testCompileOnly 'org.projectlombok:lombok:1.18.20'
-    testAnnotationProcessor 'org.projectlombok:lombok:1.18.20'
+    annotationProcessor "org.projectlombok:lombok:1.18.22"
+    compileOnly "org.projectlombok:lombok:1.18.22"
+    testCompileOnly 'org.projectlombok:lombok:1.18.22'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.22'
 
-    testImplementation "org.junit.jupiter:junit-jupiter-api:5.7.2"
-    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.7.2"
+    testImplementation "org.junit.jupiter:junit-jupiter-api:5.8.2"
+    testImplementation "org.junit.jupiter:junit-jupiter-params:5.8.2"
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.8.2"
 }
 
 test {

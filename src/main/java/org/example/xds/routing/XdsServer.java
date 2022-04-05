@@ -23,16 +23,21 @@ import io.envoyproxy.envoy.config.endpoint.v3.Endpoint;
 import io.envoyproxy.envoy.config.endpoint.v3.LbEndpoint;
 import io.envoyproxy.envoy.config.endpoint.v3.LocalityLbEndpoints;
 import io.envoyproxy.envoy.config.listener.v3.ApiListener;
+import io.envoyproxy.envoy.config.listener.v3.Filter;
+import io.envoyproxy.envoy.config.listener.v3.FilterChain;
 import io.envoyproxy.envoy.config.listener.v3.Listener;
 import io.envoyproxy.envoy.config.route.v3.Route;
 import io.envoyproxy.envoy.config.route.v3.RouteAction;
 import io.envoyproxy.envoy.config.route.v3.RouteConfiguration;
 import io.envoyproxy.envoy.config.route.v3.RouteMatch;
 import io.envoyproxy.envoy.config.route.v3.VirtualHost;
+import io.envoyproxy.envoy.extensions.filters.http.router.v3.Router;
 import io.envoyproxy.envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager;
+import io.envoyproxy.envoy.extensions.filters.network.http_connection_manager.v3.HttpFilter;
 import io.envoyproxy.envoy.extensions.filters.network.http_connection_manager.v3.Rds;
 import io.grpc.Context;
 import io.grpc.Contexts;
+import io.grpc.ForwardingServerCall.SimpleForwardingServerCall;
 import io.grpc.ForwardingServerCallListener;
 import io.grpc.Grpc;
 import io.grpc.Metadata;
@@ -40,6 +45,8 @@ import io.grpc.Server;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
+import io.grpc.Status;
+import io.grpc.Status.Code;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.protobuf.services.ProtoReflectionService;
 import java.io.IOException;
@@ -167,6 +174,31 @@ public class XdsServer {
                     };
                   }
                 })
+            .intercept(
+                new ServerInterceptor() {
+                  @Override
+                  public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
+                      ServerCall<ReqT, RespT> call,
+                      Metadata headers,
+                      ServerCallHandler<ReqT, RespT> next) {
+                    return next.startCall(
+                        new SimpleForwardingServerCall<>(call) {
+
+                          @Override
+                          public void close(Status status, Metadata trailers) {
+                            super.close(status, trailers);
+                            if (!status.isOk() && !status.getCode().equals(Code.CANCELLED)) {
+                              log.error(
+                                  "Error during GRPC call. Code: {} Description: {}.",
+                                  status.getCode(),
+                                  status.getDescription(),
+                                  status.asException(trailers));
+                            }
+                          }
+                        },
+                        headers);
+                  }
+                })
             .addService(discoveryServerV2.getAggregatedDiscoveryServiceImpl())
             .addService(discoveryServerV3.getAggregatedDiscoveryServiceImpl())
             .addService(discoveryServerV2.getClusterDiscoveryServiceImpl())
@@ -240,11 +272,28 @@ public class XdsServer {
   private static Listener createListener(String routeName) {
     return Listener.newBuilder()
         .setName(XDS_DOMAIN)
+        .addFilterChains(
+            FilterChain.newBuilder()
+                .addFilters(
+                    Filter.newBuilder()
+                        .setName("envoy.filters.network.http_connection_manager")
+                        .setTypedConfig(
+                            Any.pack(
+                                HttpConnectionManager.newBuilder()
+                                    .addHttpFilters(
+                                        HttpFilter.newBuilder()
+                                            .setName("envoy.filters.http.router")
+                                            .setTypedConfig(Any.pack(Router.getDefaultInstance())))
+                                    .build()))))
         .setApiListener(
             ApiListener.newBuilder()
                 .setApiListener(
                     Any.pack(
                         HttpConnectionManager.newBuilder()
+                            .addHttpFilters(
+                                HttpFilter.newBuilder()
+                                    .setName("envoy.filters.http.router")
+                                    .setTypedConfig(Any.pack(Router.getDefaultInstance())))
                             .setRds(
                                 Rds.newBuilder()
                                     .setConfigSource(AGG_CONFIG_SOURCE)
